@@ -1,0 +1,82 @@
+<div class="hud-container">
+  <!-- Top Left - Player Stats -->
+  <div class="stats-panel">
+    <div class="stat-item">
+      <span class="stat-label">Level</span>
+      <span class="stat-value">{{ playerStats.level }}</span>
+    </div>
+    
+    <div class="stat-bar">
+      <div class="bar-label">
+        <span>HP</span>
+        <span>{{ playerStats.health }}/{{ playerStats.maxHealth }}</span>
+      </div>
+      <div class="bar-container health">
+        <div class="bar-fill" [style.width.%]="healthPercentage"></div>
+      </div>
+    </div>
+    
+    <div class="stat-bar">
+      <div class="bar-label">
+        <span>XP</span>
+        <span>{{ playerStats.experience }}/{{ playerStats.experienceToNextLevel }}</span>
+      </div>
+      <div class="bar-container experience">
+        <div class="bar-fill" [style.width.%]="experiencePercentage"></div>
+      </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat-mini">
+        <span class="icon">⚔️</span>
+        <span>{{ playerStats.attackPower }}</span>
+      </div>
+      <div class="stat-mini">
+        <span class="icon">🛡️</span>
+        <span>{{ playerStats.defense }}</span>
+      </div>
+      <div class="stat-mini">
+        <span class="icon">💰</span>
+        <span>{{ playerStats.gold }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Right - Controls -->
+  <div class="controls-panel">
+    <button class="control-btn" (click)="toggleInventory()">
+      📦 Inventory
+    </button>
+    <button class="control-btn" (click)="togglePause()">
+      ⏸️ Pause
+    </button>
+  </div>
+
+  <!-- Inventory Panel -->
+  <div class="inventory-panel" *ngIf="showInventory">
+    <div class="panel-header">
+      <h3>Inventory</h3>
+      <button class="close-btn" (click)="toggleInventory()">✕</button>
+    </div>
+    <div class="panel-content">
+      <p class="empty-message">Inventory is empty</p>
+    </div>
+  </div>
+
+  <!-- Pause Menu -->
+  <div class="pause-overlay" *ngIf="showPauseMenu">
+    <div class="pause-menu">
+      <h2>PAUSED</h2>
+      <div class="pause-buttons">
+        <button class="pause-btn" (click)="resumeGame()">Resume</button>
+        <button class="pause-btn" (click)="returnToMenu()">Main Menu</button>
+      </div>
+      <div class="pause-hint">
+        <p>Controls:</p>
+        <p>Arrow Keys - Move</p>
+        <p>Space - Attack</p>
+        <p>ESC - Pause</p>
+      </div>
+    </div>
+  </div>
+</div>

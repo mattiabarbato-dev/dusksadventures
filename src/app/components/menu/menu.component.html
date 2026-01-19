@@ -1,0 +1,50 @@
+<div class="menu-container">
+  <div class="menu-background"></div>
+  
+  <div class="menu-content">
+    <h1 class="game-title">Dusk's Adventures</h1>
+    <p class="game-subtitle">A Medieval Fantasy RPG</p>
+    
+    <div class="menu-buttons">
+      <button class="menu-btn primary" (click)="startNewGame()">
+        New Game
+      </button>
+      
+      <button 
+        class="menu-btn" 
+        (click)="continueGame()"
+        [disabled]="!hasSaveData"
+        [class.disabled]="!hasSaveData">
+        Continue
+      </button>
+      
+      <button class="menu-btn" (click)="toggleSettings()">
+        Settings
+      </button>
+      
+      <button class="menu-btn" (click)="toggleCredits()">
+        Credits
+      </button>
+    </div>
+  </div>
+
+  <!-- Credits Modal -->
+  <div class="modal" *ngIf="showCredits" (click)="toggleCredits()">
+    <div class="modal-content" (click)="$event.stopPropagation()">
+      <h2>Credits</h2>
+      <p>Developed by: Your Name</p>
+      <p>Powered by: Angular + Phaser 3</p>
+      <p>Version: 1.0.0</p>
+      <button class="close-btn" (click)="toggleCredits()">Close</button>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal" *ngIf="showSettings" (click)="toggleSettings()">
+    <div class="modal-content" (click)="$event.stopPropagation()">
+      <h2>Settings</h2>
+      <p>Settings coming soon...</p>
+      <button class="close-btn" (click)="toggleSettings()">Close</button>
+    </div>
+  </div>
+</div>
