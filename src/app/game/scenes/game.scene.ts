@@ -19,6 +19,9 @@ export class GameScene extends Phaser.Scene {
     // Background color
     this.cameras.main.setBackgroundColor('#87CEEB');
 
+    // Set world bounds to match the level size
+    this.physics.world.setBounds(0, 0, 3200, 720);
+
     // Create platforms
     this.createPlatforms();
 
@@ -74,9 +77,9 @@ export class GameScene extends Phaser.Scene {
   private createPlatforms(): void {
     this.platforms = this.physics.add.staticGroup();
 
-    // Ground
+    // Ground - create a long platform
     for (let i = 0; i < 50; i++) {
-      this.platforms.create(i * 64, 688, 'ground');
+      this.platforms.create(i * 64 + 32, 688, 'ground');
     }
 
     // Platforms
@@ -90,6 +93,9 @@ export class GameScene extends Phaser.Scene {
     this.platforms.create(2300, 400, 'ground');
     this.platforms.create(2600, 550, 'ground');
     this.platforms.create(2900, 450, 'ground');
+
+    // Refresh all bodies in the static group
+    this.platforms.refresh();
   }
 
   private createEnemies(): void {

@@ -13,7 +13,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // Movement
   private speed = 200;
   private jumpVelocity = -400;
-  private doubleJump = false;
   private canDoubleJump = true;
 
   // Combat
@@ -23,21 +22,67 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private invulnerable = false;
   private invulnerabilityDuration = 1000;
 
+  // Player state
+  private playerState: 'idle' | 'walk' | 'jump' | 'attack' = 'idle';
+  private isGrounded = true;
+
+  // Coyote time - allows jumping shortly after leaving a platform
+  private coyoteTime = 80; // ms
+  private lastGroundedTime = 0;
+
+  // Jump buffer - registers jump input slightly before landing
+  private jumpBufferTime = 80; // ms
+  private lastJumpPressTime = 0;
+
+  // Track current animation to avoid restarting it
+  private currentAnimation = '';
+  private lastAnimationChangeTime = 0;
+  private animationDebounceTime = 100; // ms - minimum time before allowing animation change
+
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, 'player');
-    
+    super(scene, x, y, 'player', 'idle_01');
+
     scene.add.existing(this);
     scene.physics.add.existing(this);
-    
-    this.setCollideWorldBounds(false);
-    this.setBounce(0.1);
-    this.setScale(1);
+
+    // Basic physics setup
+    this.setCollideWorldBounds(true);
+    this.setBounce(0);
   }
 
   override update(cursors: Phaser.Types.Input.Keyboard.CursorKeys): void {
     if (this.isAttacking) {
       return;
     }
+
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    const currentTime = this.scene.time.now;
+
+    // Ensure body stays enabled
+    if (!body.enable) {
+      body.enable = true;
+    }
+
+    // Ground detection - check if body is blocked from below
+    const isOnGround = body.blocked.down;
+
+    if (isOnGround) {
+      this.isGrounded = true;
+      this.lastGroundedTime = currentTime;
+      this.canDoubleJump = true;
+    } else {
+      // Only mark as not grounded if we've been off the ground for a bit
+      // This prevents flickering from single-frame ground detection failures
+      const groundedGracePeriod = 50; // ms
+      if (currentTime - this.lastGroundedTime > groundedGracePeriod) {
+        this.isGrounded = false;
+      }
+    }
+
+    // Coyote time check
+    const canCoyoteJump = (currentTime - this.lastGroundedTime) < this.coyoteTime;
+
+    const isMoving = cursors.left.isDown || cursors.right.isDown;
 
     // Horizontal movement
     if (cursors.left.isDown) {
@@ -50,25 +95,55 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.setVelocityX(0);
     }
 
-    // Jump
-    const onGround = this.body?.touching.down;
-    
-    if (onGround) {
-      this.canDoubleJump = true;
+    // Track jump input (for jump buffer)
+    if (Phaser.Input.Keyboard.JustDown(cursors.up!)) {
+      this.lastJumpPressTime = currentTime;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(cursors.up!)) {
-      if (onGround) {
+    // Check if jump was recently pressed (jump buffer)
+    const jumpBuffered = (currentTime - this.lastJumpPressTime) < this.jumpBufferTime;
+
+    // Jump logic
+    if (jumpBuffered) {
+      if (this.isGrounded || canCoyoteJump) {
         this.setVelocityY(this.jumpVelocity);
+        this.isGrounded = false;
+        this.lastGroundedTime = 0;
+        this.lastJumpPressTime = 0;
       } else if (this.canDoubleJump) {
         this.setVelocityY(this.jumpVelocity);
         this.canDoubleJump = false;
+        this.lastJumpPressTime = 0;
       }
     }
 
     // Attack
     if (Phaser.Input.Keyboard.JustDown(cursors.space!)) {
       this.attack();
+      return;
+    }
+
+    // Determine animation state
+    // Use isGrounded flag which has hysteresis logic for stability
+    let targetAnim: string;
+    if (!this.isGrounded) {
+      targetAnim = 'player_jump';
+    } else if (isMoving) {
+      targetAnim = 'player_walk';
+    } else {
+      targetAnim = 'player_idle';
+    }
+
+    // Only change animation if different from current and debounce time has passed
+    // Jump animation bypasses debounce for responsiveness
+    const canChangeAnimation =
+      targetAnim === 'player_jump' ||
+      (currentTime - this.lastAnimationChangeTime) >= this.animationDebounceTime;
+
+    if (this.currentAnimation !== targetAnim && canChangeAnimation) {
+      this.currentAnimation = targetAnim;
+      this.lastAnimationChangeTime = currentTime;
+      this.anims.play(targetAnim, true);
     }
   }
 
@@ -80,25 +155,32 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.isAttacking = true;
     this.lastAttackTime = currentTime;
+    this.playerState = 'attack';
 
-    // Attack animation/effect would go here
-    this.setTint(0xffff00);
-    
-    setTimeout(() => {
+    // Play slash animation
+    this.anims.play('player_slash');
+
+    // End attack after a delay (since we have single frame)
+    this.scene.time.delayedCall(300, () => {
       this.isAttacking = false;
-      this.clearTint();
-    }, 200);
+    });
 
     // Check for enemies in range
     this.checkAttackHit();
   }
 
   private checkAttackHit(): void {
-    const attackRange = 60;
+    const attackRange = 80;
     const attackDirection = this.flipX ? -1 : 1;
-    
-    // This would check collision with enemies in a real implementation
-    // For now, it's a placeholder
+
+    // Emit attack event for scene to handle
+    this.scene.events.emit('playerAttack', {
+      x: this.x + (attackDirection * attackRange / 2),
+      y: this.y,
+      width: attackRange,
+      height: 60,
+      damage: this.attackPower
+    });
   }
 
   takeDamage(damage: number): void {
@@ -108,25 +190,41 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     const actualDamage = Math.max(1, damage - this.defense);
     this.currentHealth -= actualDamage;
-    
+
     if (this.currentHealth < 0) {
       this.currentHealth = 0;
     }
 
-    // Visual feedback
+    // Visual feedback - flash red
     this.setTint(0xff0000);
     this.invulnerable = true;
 
-    setTimeout(() => {
-      this.clearTint();
-      this.invulnerable = false;
-    }, this.invulnerabilityDuration);
+    // Flicker effect
+    this.scene.tweens.add({
+      targets: this,
+      alpha: 0.5,
+      duration: 100,
+      yoyo: true,
+      repeat: 5,
+      onComplete: () => {
+        this.clearTint();
+        this.setAlpha(1);
+        this.invulnerable = false;
+      }
+    });
 
     console.log(`Player health: ${this.currentHealth}/${this.maxHealth}`);
   }
 
   heal(amount: number): void {
     this.currentHealth = Math.min(this.maxHealth, this.currentHealth + amount);
+
+    // Green flash for healing
+    this.setTint(0x00ff00);
+    this.scene.time.delayedCall(200, () => {
+      this.clearTint();
+    });
+
     console.log(`Player healed! Health: ${this.currentHealth}/${this.maxHealth}`);
   }
 
@@ -149,6 +247,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.currentHealth = this.maxHealth;
     this.attackPower += 5;
     this.defense += 2;
+
+    // Level up visual effect
+    this.setTint(0xffff00);
+    this.scene.time.delayedCall(500, () => {
+      this.clearTint();
+    });
 
     console.log(`LEVEL UP! Now level ${this.level}`);
   }
