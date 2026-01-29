@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 
-export class Player extends Phaser.Physics.Arcade.Sprite {
+export class Player extends Phaser.GameObjects.Container {
+  // The visible sprite (child of container)
+  private sprite: Phaser.GameObjects.Sprite;
   // RPG Stats
   private maxHealth = 100;
   private currentHealth = 100;
@@ -32,7 +34,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   // Jump buffer - registers jump input slightly before landing
   private jumpBufferTime = 80; // ms
-  private lastJumpPressTime = 0;
+  private lastJumpPressTime = -1000; // Start negative to prevent auto-jump at game start
 
   // Track current animation to avoid restarting it
   private currentAnimation = '';
@@ -40,14 +42,31 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private animationDebounceTime = 100; // ms - minimum time before allowing animation change
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, 'player', 'idle_01');
+    super(scene, x, y);
 
+    // Create the visual sprite as a child - it won't affect physics
+    // Position sprite so its feet align with the bottom of the physics body
+    // Body is 70 tall with offset -35, so bottom of body is at y=+35
+    // Sprite frames have ~25px padding at bottom in sourceSize (12.5 after 0.5 scale)
+    this.sprite = scene.add.sprite(-10, 35 - 32, 'player', 'idle_01');
+    this.sprite.setScale(0.5); // Scale down the large sprite
+    this.sprite.setOrigin(0.5, 1); // Anchor at bottom-center of sourceSize
+    this.add(this.sprite);
+
+    // Add container to scene and enable physics on the CONTAINER (not the sprite)
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
+    const body = this.body as Phaser.Physics.Arcade.Body;
+
+    // Set a fixed body size for the container - this won't change with animations
+    body.setSize(50, 70);
+    body.setOffset(-25, -35); // Center the body on the container origin
+
     // Basic physics setup
-    this.setCollideWorldBounds(true);
-    this.setBounce(0);
+    this.setSize(50, 70); // Container size for physics
+    body.setCollideWorldBounds(true);
+    body.setBounce(0);
   }
 
   override update(cursors: Phaser.Types.Input.Keyboard.CursorKeys): void {
@@ -73,7 +92,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     } else {
       // Only mark as not grounded if we've been off the ground for a bit
       // This prevents flickering from single-frame ground detection failures
-      const groundedGracePeriod = 50; // ms
+      const groundedGracePeriod = 100; // ms - increased to prevent animation flickering
       if (currentTime - this.lastGroundedTime > groundedGracePeriod) {
         this.isGrounded = false;
       }
@@ -86,13 +105,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // Horizontal movement
     if (cursors.left.isDown) {
-      this.setVelocityX(-this.speed);
-      this.setFlipX(true);
+      body.setVelocityX(-this.speed);
+      this.sprite.setFlipX(true);
     } else if (cursors.right.isDown) {
-      this.setVelocityX(this.speed);
-      this.setFlipX(false);
+      body.setVelocityX(this.speed);
+      this.sprite.setFlipX(false);
     } else {
-      this.setVelocityX(0);
+      body.setVelocityX(0);
     }
 
     // Track jump input (for jump buffer)
@@ -106,12 +125,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // Jump logic
     if (jumpBuffered) {
       if (this.isGrounded || canCoyoteJump) {
-        this.setVelocityY(this.jumpVelocity);
+        body.setVelocityY(this.jumpVelocity);
         this.isGrounded = false;
         this.lastGroundedTime = 0;
         this.lastJumpPressTime = 0;
       } else if (this.canDoubleJump) {
-        this.setVelocityY(this.jumpVelocity);
+        body.setVelocityY(this.jumpVelocity);
         this.canDoubleJump = false;
         this.lastJumpPressTime = 0;
       }
@@ -125,9 +144,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // Determine animation state
     // Use isGrounded flag which has hysteresis logic for stability
+    // NOTE: Using idle instead of jump to avoid frame size issues
     let targetAnim: string;
     if (!this.isGrounded) {
-      targetAnim = 'player_jump';
+      targetAnim = 'player_idle'; // Was player_jump - but that frame is too large
     } else if (isMoving) {
       targetAnim = 'player_walk';
     } else {
@@ -143,7 +163,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.currentAnimation !== targetAnim && canChangeAnimation) {
       this.currentAnimation = targetAnim;
       this.lastAnimationChangeTime = currentTime;
-      this.anims.play(targetAnim, true);
+      this.sprite.anims.play(targetAnim, true);
     }
   }
 
@@ -158,11 +178,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.playerState = 'attack';
 
     // Play slash animation
-    this.anims.play('player_slash');
+    this.currentAnimation = 'player_slash';
+    this.sprite.anims.play('player_slash');
 
     // End attack after a delay (since we have single frame)
     this.scene.time.delayedCall(300, () => {
       this.isAttacking = false;
+      // Reset animation tracking to force re-evaluation on next frame
+      this.currentAnimation = '';
     });
 
     // Check for enemies in range
@@ -171,7 +194,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   private checkAttackHit(): void {
     const attackRange = 80;
-    const attackDirection = this.flipX ? -1 : 1;
+    const attackDirection = this.sprite.flipX ? -1 : 1;
 
     // Emit attack event for scene to handle
     this.scene.events.emit('playerAttack', {
@@ -196,19 +219,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     // Visual feedback - flash red
-    this.setTint(0xff0000);
+    this.sprite.setTint(0xff0000);
     this.invulnerable = true;
 
     // Flicker effect
     this.scene.tweens.add({
-      targets: this,
+      targets: this.sprite,
       alpha: 0.5,
       duration: 100,
       yoyo: true,
       repeat: 5,
       onComplete: () => {
-        this.clearTint();
-        this.setAlpha(1);
+        this.sprite.clearTint();
+        this.sprite.setAlpha(1);
         this.invulnerable = false;
       }
     });
@@ -220,9 +243,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.currentHealth = Math.min(this.maxHealth, this.currentHealth + amount);
 
     // Green flash for healing
-    this.setTint(0x00ff00);
+    this.sprite.setTint(0x00ff00);
     this.scene.time.delayedCall(200, () => {
-      this.clearTint();
+      this.sprite.clearTint();
     });
 
     console.log(`Player healed! Health: ${this.currentHealth}/${this.maxHealth}`);
@@ -249,9 +272,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.defense += 2;
 
     // Level up visual effect
-    this.setTint(0xffff00);
+    this.sprite.setTint(0xffff00);
     this.scene.time.delayedCall(500, () => {
-      this.clearTint();
+      this.sprite.clearTint();
     });
 
     console.log(`LEVEL UP! Now level ${this.level}`);
@@ -288,5 +311,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   getDefense(): number {
     return this.defense;
+  }
+
+  // Wrapper methods for sprite visual effects
+  setTint(color: number): this {
+    this.sprite.setTint(color);
+    return this;
+  }
+
+  clearTint(): this {
+    this.sprite.clearTint();
+    return this;
   }
 }
