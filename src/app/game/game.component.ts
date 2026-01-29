@@ -35,7 +35,7 @@ export class GameComponent implements OnInit, OnDestroy {
         default: 'arcade',
         arcade: {
           gravity: { y: 800, x: 0 },
-          debug: true // Temporarily enabled to see colliders
+          debug: false // Temporarily enabled to see colliders
         }
       },
       scene: [PreloadScene, GameScene],
@@ -47,5 +47,8 @@ export class GameComponent implements OnInit, OnDestroy {
     };
 
     this.game = new Phaser.Game(config);
+
+    // Pass GameService to Phaser scenes via registry
+    this.game.registry.set('gameService', this.gameService);
   }
 }

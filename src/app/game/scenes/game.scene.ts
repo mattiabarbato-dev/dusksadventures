@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Player } from '../entities/player';
 import { Enemy } from '../entities/enemy';
+import { GameService } from '../services/game.service';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -8,16 +9,24 @@ export class GameScene extends Phaser.Scene {
   private platforms!: Phaser.Physics.Arcade.StaticGroup;
   private coins!: Phaser.Physics.Arcade.Group;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private score = 0;
-  private scoreText!: Phaser.GameObjects.Text;
+  private gameService!: GameService;
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
   create(): void {
-    // Background color
-    this.cameras.main.setBackgroundColor('#87CEEB');
+    // Get GameService from registry
+    this.gameService = this.registry.get('gameService');
+
+    // Background images with parallax effect (tiled for full level width)
+    const bg1 = this.add.image(0, 0, 'background').setOrigin(0, 0);
+    bg1.setScrollFactor(0.3); // Parallax - moves slower than camera
+    bg1.setDisplaySize(1920, 720);
+
+    const bg2 = this.add.image(1920, 0, 'background').setOrigin(0, 0);
+    bg2.setScrollFactor(0.3);
+    bg2.setDisplaySize(1920, 720);
 
     // Set world bounds to match the level size
     this.physics.world.setBounds(0, 0, 3200, 720);
@@ -47,13 +56,8 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.coins, this.collectCoin, undefined, this);
     this.physics.add.overlap(this.player, this.enemies, this.hitEnemy, undefined, this);
 
-    // Score
-    this.scoreText = this.add.text(16, 16, 'Gold: 0', {
-      fontSize: '24px',
-      color: '#fff',
-      stroke: '#000',
-      strokeThickness: 4
-    });
+    // Listen for player attack events
+    this.events.on('playerAttack', this.handlePlayerAttack, this);
 
     // Camera follow player
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
@@ -138,20 +142,58 @@ export class GameScene extends Phaser.Scene {
 
   private collectCoin(player: any, coin: any): void {
     coin.disableBody(true, true);
-    this.score += 10;
-    this.scoreText.setText('Gold: ' + this.score);
-    
-    // Play sound effect (when you add audio)
-    // this.sound.play('coinSound');
+
+    // Update gold in GameService
+    const currentStats = this.gameService.getPlayerStats();
+    this.gameService.updatePlayerStats({ gold: currentStats.gold + 10 });
+  }
+
+  private handlePlayerAttack(attackData: { x: number; y: number; width: number; height: number; damage: number }): void {
+    // Create attack hitbox
+    const attackRect = new Phaser.Geom.Rectangle(
+      attackData.x - attackData.width / 2,
+      attackData.y - attackData.height / 2,
+      attackData.width,
+      attackData.height
+    );
+
+    // Check each enemy
+    this.enemies.children.entries.forEach((enemyObj) => {
+      const enemy = enemyObj as Enemy;
+      if (enemy.getIsDead()) return;
+
+      // Check if enemy is in attack range
+      const enemyBounds = enemy.getBounds();
+      if (Phaser.Geom.Rectangle.Overlaps(attackRect, enemyBounds)) {
+        enemy.takeDamage(attackData.damage);
+
+        // If enemy died, give XP
+        if (enemy.getIsDead()) {
+          this.player.gainExperience(enemy.getExperienceReward());
+
+          // Update XP in GameService
+          this.gameService.updatePlayerStats({
+            experience: this.player.getExperience(),
+            level: this.player.getLevel(),
+            experienceToNextLevel: this.player.getExperienceToNextLevel()
+          });
+        }
+      }
+    });
   }
 
   private hitEnemy(player: any, enemy: any): void {
+    // Apply damage to player
     this.player.takeDamage(20);
-    
+
+    // Update health in GameService
+    this.gameService.updatePlayerStats({ health: this.player.getHealth() });
+
     // Knockback
     const knockbackDirection = player.x < enemy.x ? -1 : 1;
-    player.body.setVelocityX(knockbackDirection * 200);
-    player.body.setVelocityY(-200);
+    const body = player.body as Phaser.Physics.Arcade.Body;
+    body.setVelocityX(knockbackDirection * 200);
+    body.setVelocityY(-200);
 
     if (this.player.isDead()) {
       this.gameOver();
@@ -161,7 +203,8 @@ export class GameScene extends Phaser.Scene {
   private gameOver(): void {
     this.physics.pause();
     this.player.setTint(0xff0000);
-    
+    this.gameService.setGameState('gameOver');
+
     const gameOverText = this.add.text(
       this.cameras.main.centerX,
       this.cameras.main.centerY,
@@ -178,8 +221,8 @@ export class GameScene extends Phaser.Scene {
     gameOverText.setScrollFactor(0);
 
     this.input.keyboard?.once('keydown-SPACE', () => {
+      this.gameService.resetGame();
       this.scene.restart();
-      this.score = 0;
     });
   }
 }

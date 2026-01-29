@@ -54,6 +54,9 @@ export class PreloadScene extends Phaser.Scene {
     // Load player spritesheet with atlas
     this.load.atlas('player', 'assets/sprites/player.png', 'assets/sprites/player.json');
 
+    // Load background
+    this.load.image('background', 'assets/images/background.png');
+
     // Create placeholder assets for other game elements
     this.createPlaceholderAssets();
   }

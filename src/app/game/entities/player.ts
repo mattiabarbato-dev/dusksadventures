@@ -45,12 +45,11 @@ export class Player extends Phaser.GameObjects.Container {
     super(scene, x, y);
 
     // Create the visual sprite as a child - it won't affect physics
-    // Position sprite so its feet align with the bottom of the physics body
-    // Body is 70 tall with offset -35, so bottom of body is at y=+35
-    // Sprite frames have ~25px padding at bottom in sourceSize (12.5 after 0.5 scale)
-    this.sprite = scene.add.sprite(-10, 35 - 32, 'player', 'idle_01');
-    this.sprite.setScale(0.5); // Scale down the large sprite
-    this.sprite.setOrigin(0.5, 1); // Anchor at bottom-center of sourceSize
+    // Sprite frames are now aligned with feet at bottom-center
+    // Body bottom is at y=+35, so place sprite feet there
+    this.sprite = scene.add.sprite(-15, 5, 'player', 'idle_01');
+    this.sprite.setScale(0.5); // Scale down the 192x192 sprite to 96x96
+    this.sprite.setOrigin(0.5, 1); // Anchor at bottom-center (feet)
     this.add(this.sprite);
 
     // Add container to scene and enable physics on the CONTAINER (not the sprite)
@@ -144,10 +143,9 @@ export class Player extends Phaser.GameObjects.Container {
 
     // Determine animation state
     // Use isGrounded flag which has hysteresis logic for stability
-    // NOTE: Using idle instead of jump to avoid frame size issues
     let targetAnim: string;
     if (!this.isGrounded) {
-      targetAnim = 'player_idle'; // Was player_jump - but that frame is too large
+      targetAnim = 'player_jump';
     } else if (isMoving) {
       targetAnim = 'player_walk';
     } else {
